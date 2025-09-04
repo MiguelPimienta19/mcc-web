@@ -1,17 +1,47 @@
+/* 1) Load Tailwind and your brand tokens first */
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
+@theme inline {
+  /* Colors (now you can use bg-brand-700, text-muted, etc.) */
+  --color-brand-50:  var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+
+  --color-bg:      var(--bg);
+  --color-surface: var(--surface);
+  --color-line:    var(--line);
+  --color-text:    var(--text);
+  --color-muted:   var(--muted);
+  --color-focus:   var(--focus);
+
+  /* Radii (rounded-xl/2xl/3xl) */
+  --radius-xl:  0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+
+  /* Shadows (shadow-soft, shadow-lift) */
+  --shadow-soft: 0 2px 20px rgba(0,0,0,0.05);
+  --shadow-lift: 0 8px 30px rgba(0,0,0,0.08);
+
+  /* Optional fonts if you later add @next/font */
+  --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui);
+  --font-mono: var(--font-geist-mono, ui-monospace, SFMono-Regular);
+}
+
+/* 3) Light/Dark backgrounds (optional) */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -19,8 +49,9 @@
   }
 }
 
+/* 4) Base page styles (okay to keep simple) */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, Arial, Helvetica, sans-serif);
 }

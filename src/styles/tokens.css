@@ -1,0 +1,22 @@
+
+:root {
+    --brand-950:#0F1F17;
+    --brand-900:#163525;
+    --brand-800:#1F4C34;
+    --brand-700:#2E6F40;
+    --brand-600:#3B8652;
+    --brand-500:#4AA764;
+    --brand-400:#74C48B;
+    --brand-300:#A5DBB7;
+    --brand-200:#D0F0DA;
+    --brand-100:#EAF9EF;
+    --brand-50:#F6FFF9;
+  
+    --bg:#FCFCFC;
+    --surface:#FFFFFF;
+    --line:#EAEAEA;
+    --text:#111827;
+    --muted:#6B7280;
+    --focus:#1D4ED8;
+  }
+  

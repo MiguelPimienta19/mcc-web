@@ -1,0 +1,400 @@
+🔭 Product rules (source of truth)
+
+Create events: anyone (no sign-in) can create.
+
+Read events: everyone (public).
+
+Update/Delete: admins only.
+
+Admin = signed-in user whose email is on your allowlist (we’ll sync role to profiles.role='admin').
+
+Add to calendar: show “Add to Google” + “Download .ics” per event (no rolling feed).
+
+Auth: Email Magic Link (primary). Microsoft optional later via feature flag.
+
+Tradeoff note: because anonymous users can create events, only admins will be able to edit/delete (creators can’t “prove” identity later). That’s the simplest, safest model.
+
+🧱 Tech stack
+
+Next.js 14+ (App Router, TS) + Tailwind + shadcn/ui
+
+Supabase (Auth + Postgres + RLS)
+
+react-big-calendar (+ minimal CSS overrides)
+
+TanStack Query (data fetching/mutations)
+
+Zod + React-Hook-Form (forms with validation)
+
+ics (generate single-event .ics files)
+
+Icons: lucide-react
+
+🏗️ Data model & RLS (paste in Supabase SQL editor)
+-- Profiles: holds role (admin/member)
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  role text not null default 'member',
+  created_at timestamptz default now()
+);
+
+-- Admin allowlist by email (only admins manage this via UI later or SQL now)
+create table if not exists admin_allowlist (
+  email text primary key
+);
+
+-- Auto-create profile on signup
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles(id, full_name)
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name',''));
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
+
+-- Events: creator is null for anon inserts; admins own moderation
+create table if not exists events (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  location text,
+  starts_at timestamptz not null,
+  ends_at   timestamptz not null,
+  rrule text,
+  exdates timestamptz[] default '{}',
+  tags text[] default '{}',
+  timezone text default 'America/Los_Angeles',
+  created_by uuid references auth.users(id), -- may be NULL for anon
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table profiles enable row level security;
+alter table admin_allowlist enable row level security;
+alter table events enable row level security;
+
+-- Profiles: public read, user updates self
+create policy "profiles_read_all" on profiles for select using (true);
+create policy "profiles_update_self" on profiles
+for update using (auth.uid() = id) with check (auth.uid() = id);
+
+-- Allowlist: only admins can select/modify
+create policy "allowlist_read_admins" on admin_allowlist for select using (
+  exists (select 1 from profiles p where p.id = auth.uid() and p.role='admin')
+);
+create policy "allowlist_write_admins" on admin_allowlist for all using (
+  exists (select 1 from profiles p where p.id = auth.uid() and p.role='admin')
+) with check (
+  exists (select 1 from profiles p where p.id = auth.uid() and p.role='admin')
+);
+
+-- EVENTS permissions per your rules:
+-- 1) Public can READ
+create policy "events_read_all" on events for select using (true);
+
+-- 2) Anyone (even anon) can INSERT (create)
+--    NOTE: This means your client can call .insert() with the anon key.
+create policy "events_insert_anyone" on events
+for insert with check (true);
+
+-- 3) Only ADMINS can UPDATE
+create policy "events_update_admins" on events
+for update using (
+  exists (select 1 from profiles p where p.id = auth.uid() and p.role='admin')
+);
+
+-- 4) Only ADMINS can DELETE
+create policy "events_delete_admins" on events
+for delete using (
+  exists (select 1 from profiles p where p.id = auth.uid() and p.role='admin')
+);
+
+
+Anti-abuse tip (optional but recommended since anon inserts are allowed): add a trivial hCaptcha on the create form or rate-limit POSTs in your API route.
+
+🔐 Auth & Admin roles
+
+Enable Email (Magic link) in Supabase.
+
+Route /api/auth/sync-role promotes a signed-in user to admin if their email is in admin_allowlist.
+
+Gate /admin/** with Next.js middleware (admins only). RLS already enforces DB rules server-side.
+
+Env:
+
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+
+
+Role sync route (paste):
+
+// src/app/api/auth/sync-role/route.ts
+import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+
+export async function GET() {
+  const sb = createRouteHandlerClient({ cookies });
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ ok: true });
+
+  const { data: allow } = await sb.from('admin_allowlist')
+    .select('email').eq('email', user.email).maybeSingle();
+
+  await sb.from('profiles')
+    .upsert({ id: user.id, role: allow ? 'admin' : 'member' }, { onConflict: 'id' });
+
+  return NextResponse.json({ ok: true });
+}
+
+
+Middleware:
+
+// src/middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  const sb = createMiddlewareClient({ req, res });
+
+  if (req.nextUrl.pathname.startsWith('/admin')) {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return NextResponse.redirect(new URL('/signin', req.url));
+    const { data: profile } = await sb.from('profiles').select('role').eq('id', user.id).single();
+    if (profile?.role !== 'admin') return NextResponse.redirect(new URL('/', req.url));
+  }
+  return res;
+}
+export const config = { matcher: ['/admin/:path*'] };
+
+
+Sign-in (email magic link):
+
+// src/app/signin/page.tsx
+'use client';
+import { useState } from 'react';
+import { createBrowserClient } from '@supabase/auth-helpers-nextjs';
+
+export default function SignIn() {
+  const sb = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const [email, setEmail] = useState('');
+
+  return (
+    <div className="mx-auto max-w-md rounded-2xl border p-6 bg-white space-y-4">
+      <h1 className="text-xl font-semibold">Sign in</h1>
+      <input
+        className="w-full h-10 px-3 rounded-xl border"
+        placeholder="you@domain.edu"
+        type="email" value={email}
+        onChange={(e)=>setEmail(e.target.value)}
+      />
+      <button
+        className="w-full h-10 rounded-xl bg-black text-white"
+        onClick={async ()=>{
+          await sb.auth.signInWithOtp({
+            email,
+            options:{ emailRedirectTo: `${location.origin}/auth/callback` }
+          });
+          alert('Check your email for a magic link.');
+        }}>
+        Send magic link
+      </button>
+    </div>
+  );
+}
+
+
+Auth callback:
+
+// src/app/auth/callback/route.ts
+import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+
+export async function GET() {
+  const sb = createRouteHandlerClient({ cookies });
+  await sb.auth.getSession(); // set cookie
+  await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/auth/sync-role`, { cache: 'no-store' });
+  return NextResponse.redirect(new URL('/', process.env.NEXT_PUBLIC_SITE_URL));
+}
+
+🗄️ API: Events & .ics
+
+GET /api/events?start&end → list events (you can add recurrence expansion later).
+POST /api/events → create event (anyone; anon allowed).
+PUT /api/events/[id] → update (admins only, enforced by RLS).
+DELETE /api/events/[id] → delete (admins only, enforced by RLS).
+GET /api/events/[id]/ics → single-event .ics.
+
+.ics route (paste):
+
+// src/app/api/events/[id]/ics/route.ts
+import { NextResponse } from "next/server";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
+import { createEvent } from "ics";
+
+export async function GET(_: Request, { params }: { params: { id: string } }) {
+  const sb = createRouteHandlerClient({ cookies });
+  const { data: ev } = await sb.from("events").select("*").eq("id", params.id).single();
+  if (!ev) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const toArr = (d: Date) => [d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes()];
+  const { value, error } = createEvent({
+    title: ev.title,
+    description: ev.description ?? "",
+    location: ev.location ?? "",
+    start: toArr(new Date(ev.starts_at)),
+    end:   toArr(new Date(ev.ends_at)),
+    rrule: ev.rrule || undefined,
+    url: `${process.env.NEXT_PUBLIC_SITE_URL}/event/${ev.id}`,
+    status: "CONFIRMED"
+  });
+  if (error) return NextResponse.json({ error: String(error) }, { status: 500 });
+
+  const safe = ev.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  return new NextResponse(value, {
+    headers: {
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${safe}.ics"`
+    }
+  });
+}
+
+
+Google link helper (optional, nice UX):
+
+// src/lib/google.ts
+export function googleCalUrl({ title, description='', location='', startIsoUtc, endIsoUtc }:{
+  title:string; description?:string; location?:string; startIsoUtc:string; endIsoUtc:string;
+}) {
+  const fmt = (iso:string)=>new Date(iso).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const q = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    details: description,
+    location,
+    dates: `${fmt(startIsoUtc)}/${fmt(endIsoUtc)}`
+  });
+  return `https://calendar.google.com/calendar/render?${q.toString()}`;
+}
+
+
+UI buttons:
+
+// src/components/events/AddToCalendar.tsx
+"use client";
+import Link from "next/link";
+import { googleCalUrl } from "@/lib/google";
+
+export function AddToCalendar({ event }:{
+  event:{ id:string; title:string; description?:string|null; location?:string|null; starts_at:string; ends_at:string; }
+}) {
+  const gUrl = googleCalUrl({
+    title: event.title,
+    description: event.description ?? "",
+    location: event.location ?? "",
+    startIsoUtc: event.starts_at,
+    endIsoUtc: event.ends_at
+  });
+
+  return (
+    <div className="flex gap-2">
+      <Link href={gUrl} target="_blank"> 
+        <button className="h-10 px-4 rounded-2xl bg-[var(--brand-700)] text-white hover:bg-[var(--brand-800)]">
+          Add to Google
+        </button>
+      </Link>
+      <Link href={`/api/events/${event.id}/ics`}>
+        <button className="h-10 px-4 rounded-2xl border border-[var(--brand-300)] text-[var(--brand-700)] hover:bg-[var(--brand-100)]">
+          Download .ics (Apple/Outlook)
+        </button>
+      </Link>
+    </div>
+  );
+}
+
+🖼️ UI/UX & CSS (short)
+
+Use your brand green tokens (--brand-700/800/100/50) for buttons/headers/hover.
+
+Cards: rounded-2xl border border-line bg-white shadow-soft.
+
+Navbar: sticky, light border bottom, centered tabs.
+
+Calendar: react-big-calendar with minimal CSS overrides (events in brand green, today in brand-50).
+
+🗂️ File structure (final)
+src/
+  app/
+    (public)/
+      page.tsx                 # Landing: Calendar + Filters + Highlights
+      kiosk/page.tsx           # Fullscreen day view
+      chatbot/page.tsx         # Agenda MVP
+      signin/page.tsx          # Email magic link
+    admin/
+      page.tsx                 # Admin dashboard (guarded)
+      allowlist/page.tsx       # (optional) simple UI to add/remove admin emails
+    api/
+      auth/
+        sync-role/route.ts     # promote to admin if allowlisted
+      events/
+        route.ts               # GET list (by range), POST create
+        [id]/
+          route.ts             # PUT update, DELETE delete (RLS enforces)
+          ics/route.ts         # single-event .ics download
+    auth/
+      callback/route.ts        # finalize session & sync role
+    layout.tsx
+    globals.css                # imports tokens.css & shadcn styles
+  components/
+    layout/Navbar.tsx
+    calendar/CalendarView.tsx
+    events/AddToCalendar.tsx
+    events/EventForm.tsx
+    events/AdminTable.tsx
+    ui/                        # shadcn components
+  hooks/
+    useEvents.ts               # TanStack Query hooks
+  lib/
+    supabase-browser.ts
+    supabase-server.ts
+    google.ts
+    recurrence.ts              # (later, if you add rrule expansion)
+    types.ts
+  styles/
+    tokens.css                 # brand palette tokens
+
+✅ Build order (step-by-step today)
+
+Supabase: run SQL above; enable Email magic links; add your email to admin_allowlist; sign in once.
+
+Env: add NEXT_PUBLIC_SUPABASE_* & NEXT_PUBLIC_SITE_URL.
+
+Auth pages: /signin, /auth/callback, /api/auth/sync-role, middleware.ts.
+
+Events API: implement GET/POST, PUT/DELETE, ics (paste above).
+
+Calendar UI: drop CalendarView (from earlier), fetch via GET /api/events.
+
+Create form (RHF + Zod), POST to /api/events (works for anon).
+
+Admin page: table + edit/delete (only admins pass middleware; RLS protects anyway).
+
+AddToCalendar buttons (Google + .ics).
+
+Style with tokens; test flows; deploy to Vercel.
+
