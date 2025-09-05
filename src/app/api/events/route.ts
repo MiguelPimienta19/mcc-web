@@ -20,12 +20,10 @@ export async function POST(req: Request) {
   const sb = await supabaseServer();
   const payload = await req.json();
 
-  // minimal validation
   if (!payload?.title || !payload?.starts_at || !payload?.ends_at) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
 
-  // created_by will be null for anon; Supabase will set if user session exists
   const { data, error } = await sb.from('events').insert(payload).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);

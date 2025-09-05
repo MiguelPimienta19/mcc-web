@@ -5,29 +5,43 @@ import { createServerClient } from '@supabase/ssr';
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          res.cookies.set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
-
   if (req.nextUrl.pathname.startsWith('/admin')) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.redirect(new URL('/signin', req.url));
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'admin') return NextResponse.redirect(new URL('/', req.url));
+    // Check if admin email is stored in cookies (set by client)
+    const adminEmail = req.cookies.get('admin-email')?.value;
+    
+    if (!adminEmail) {
+      return NextResponse.redirect(new URL('/signin', req.url));
+    }
+
+    // Verify the email is still in admin allowlist
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookies) {
+            cookies.forEach(({ name, value, options }) => {
+              res.cookies.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
+
+    const { data: admin } = await supabase
+      .from('admin_allowlist')
+      .select('email')
+      .eq('email', adminEmail)
+      .maybeSingle();
+
+    if (!admin) {
+      // Remove invalid cookie and redirect
+      res.cookies.delete('admin-email');
+      return NextResponse.redirect(new URL('/signin', req.url));
+    }
   }
 
   return res;
