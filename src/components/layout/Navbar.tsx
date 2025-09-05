@@ -18,7 +18,7 @@ export default function Navbar() {
         setRole(data?.role ?? null);
       }
     })();
-  }, []);
+  }, [sb]);
 
   return (
     <nav className="sticky top-0 z-40 bg-surface/90 backdrop-blur border-b border-line">

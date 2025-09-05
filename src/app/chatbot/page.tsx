@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -42,6 +43,7 @@ export default function ChatbotPage() {
         setMessages([...newMessages, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
       }
     } catch (error) {
+      console.error('Chatbot error:', error);
       setMessages([...newMessages, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
     }
 
@@ -94,12 +96,12 @@ export default function ChatbotPage() {
           <h1 className="text-2xl font-bold text-brand-800">Meeting Agenda Assistant</h1>
           <p className="text-gray-600">Get help creating structured meeting agendas</p>
         </div>
-        <a 
+        <Link 
           href="/" 
           className="h-10 px-4 rounded-xl border border-gray-300 hover:bg-gray-50 flex items-center text-gray-700"
         >
           ← Back
-        </a>
+        </Link>
       </div>
 
       {/* Messages - Full height with scroll */}
