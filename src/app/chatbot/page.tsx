@@ -103,7 +103,7 @@ export default function ChatbotPage() {
       </div>
 
       {/* Messages - Full height with scroll */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 pb-24">
         <div className="max-w-4xl mx-auto space-y-6">
           {messages.map((message, index) => (
             <div
@@ -138,8 +138,8 @@ export default function ChatbotPage() {
         </div>
       </div>
 
-      {/* Input - Fixed at bottom */}
-      <div className="bg-white border-t border-gray-200 p-4">
+      {/* Input - Fixed at bottom of screen */}
+      <div className="fixed bottom-0 left-0 right-0 bg-surface border-t border-line shadow-lift p-4 z-10">
         <div className="max-w-4xl mx-auto flex gap-3">
           <input
             type="text"
@@ -147,15 +147,15 @@ export default function ChatbotPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Describe your meeting or ask for agenda help..."
-            className="flex-1 h-12 px-4 rounded-xl border border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="flex-1 h-12 px-4 rounded-xl border border-line bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             disabled={loading}
           />
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="h-12 px-6 rounded-xl bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-50 font-medium"
+            className="h-12 px-6 rounded-xl bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-50 font-medium transition-colors"
           >
-            Send
+            {loading ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>

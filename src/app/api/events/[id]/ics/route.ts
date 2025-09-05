@@ -21,11 +21,11 @@ export async function GET(
   }
 
   const toArr = (d: Date): [number, number, number, number, number] => [
-    d.getFullYear(),      // Local year instead of getUTCFullYear()
-    d.getMonth() + 1,     // Local month instead of getUTCMonth()
-    d.getDate(),          // Local date instead of getUTCDate()
-    d.getHours(),         // Local hours instead of getUTCHours()
-    d.getMinutes(),       // Local minutes instead of getUTCMinutes()
+    d.getFullYear(),      // Local
+    d.getMonth() + 1,     // Local 
+    d.getDate(),          // Local
+    d.getHours(),         // Local hours
+    d.getMinutes(),       // Local minutes 
   ];
   
   const { value, error: icsErr } = createEvent({

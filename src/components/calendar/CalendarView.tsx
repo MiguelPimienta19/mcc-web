@@ -97,6 +97,11 @@ export default function CalendarView() {
         color: #000 !important;
         font-weight: 700;
       }
+
+      .rbc-date-cell {
+        color: #000 !important;
+        font-weight: 700;
+      }
     `}</style>
   ), []);
 
@@ -114,7 +119,7 @@ export default function CalendarView() {
           onNavigate={setDate}
           startAccessor="start"
           endAccessor="end"
-          style={{ height: 600 }}
+          style={{ height: 1000 }}
           onSelectEvent={(e) => setSelected(e as EventUI)}
 
           /* 👇 focus the visible hours */

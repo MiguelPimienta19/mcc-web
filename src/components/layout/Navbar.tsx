@@ -36,7 +36,7 @@ export default function Navbar() {
           ) : (
             <Link href="/signin">
               <button className="h-9 px-3 rounded-xl bg-brand-700 text-white hover:bg-brand-800">
-                Sign in
+                Admin
               </button>
             </Link>
           )}
