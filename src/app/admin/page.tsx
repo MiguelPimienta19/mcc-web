@@ -87,6 +87,7 @@ export default function AdminPage() {
         alert('Failed to add admin');
       }
     } catch (err) {
+      console.error('Failed to add admin:', err);
       alert('Failed to add admin');
     }
   }
@@ -107,6 +108,7 @@ export default function AdminPage() {
         alert('Failed to remove admin');
       }
     } catch (err) {
+      console.error('Failed to remove admin:', err);
       alert('Failed to remove admin');
     }
   }
